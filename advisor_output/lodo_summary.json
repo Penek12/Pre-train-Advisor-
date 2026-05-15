@@ -1,0 +1,73 @@
+{
+  "overall": {
+    "n_pairs": 456,
+    "MAE_delta": 9728778010.00842,
+    "top1_hit_rate": 0.2692307692307692,
+    "sign_match_rate": 0.47149122807017546,
+    "spearman_correlation": 0.2129832772033805,
+    "spearman_p": 4.467749355078914e-06
+  },
+  "by_gamma_bin": {
+    "S — γ₁≤0.5 (квази-симметрично)": {
+      "n_pairs": 156,
+      "MAE_delta": 4.856107308578427,
+      "top1_hit_rate": 0.0,
+      "sign_match_rate": 0.3717948717948718,
+      "spearman_correlation": 0.023023414841450474,
+      "spearman_p": 0.7754239219865544
+    },
+    "M — 0.5<γ₁≤1.5 (умеренная асимметрия)": {
+      "n_pairs": 156,
+      "MAE_delta": 10.795715506942088,
+      "top1_hit_rate": 0.6666666666666666,
+      "sign_match_rate": 0.5128205128205128,
+      "spearman_correlation": -0.013278422114491694,
+      "spearman_p": 0.8693211276275534
+    },
+    "H — 1.5<γ₁≤3 (сильная асимметрия)": {
+      "n_pairs": 90,
+      "MAE_delta": 4195423.235073171,
+      "top1_hit_rate": 0.06666666666666667,
+      "sign_match_rate": 0.6,
+      "spearman_correlation": -0.6512056844123106,
+      "spearman_p": 3.670487117017694e-12
+    },
+    "X — γ₁>3 (экстремальная асимметрия)": {
+      "n_pairs": 54,
+      "MAE_delta": 82147133000.57404,
+      "top1_hit_rate": 0.2222222222222222,
+      "sign_match_rate": 0.42592592592592593,
+      "spearman_correlation": 0.4524871355060034,
+      "spearman_p": 0.0005919963999426659
+    }
+  },
+  "by_model": {
+    "МНК": {
+      "n_pairs": 152,
+      "MAE_delta": 8732000894.682165,
+      "top1_hit_rate": 0.3076923076923077,
+      "sign_match_rate": 0.45394736842105265,
+      "spearman_correlation": 0.20314962446531237,
+      "spearman_p": 0.012067883187190386
+    },
+    "Ridge": {
+      "n_pairs": 152,
+      "MAE_delta": 9290195521.758455,
+      "top1_hit_rate": 0.2692307692307692,
+      "sign_match_rate": 0.47368421052631576,
+      "spearman_correlation": 0.21970264544207765,
+      "spearman_p": 0.006535549729901656
+    },
+    "Lasso": {
+      "n_pairs": 152,
+      "MAE_delta": 11164137613.584642,
+      "top1_hit_rate": 0.23076923076923078,
+      "sign_match_rate": 0.4868421052631579,
+      "spearman_correlation": 0.16580877082683199,
+      "spearman_p": 0.041200524940145734
+    }
+  },
+  "n_datasets": 26,
+  "n_models": 3,
+  "n_transforms": 6
+}
