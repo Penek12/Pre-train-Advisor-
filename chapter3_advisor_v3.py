@@ -88,12 +88,13 @@ from typing import Optional, List, Dict, Any
 import numpy as np
 import pandas as pd
 from scipy.stats import skew, kurtosis, shapiro
+from scipy import stats
+from scipy.stats import boxcox
 
 # ── Импорт констант и pure-scipy функций (всегда нужны) ─────────────────────
 # advisor_constants.py — лёгкий модуль без зависимостей от sklearn / xgboost /
 # matplotlib / statsmodels. Грузится в любых окружениях, включая Streamlit
 # Cloud, где могут отсутствовать тяжёлые пакеты для обучения моделей.
-
 RANDOM_STATE    = 42
 TEST_SIZE       = 0.20
 N_FOLDS         = 5
@@ -142,6 +143,12 @@ MODEL_CLASS = {
 }
 REGRESSION_MODELS = frozenset({"linear", "ridge", "lasso"})
 
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ПУРЕ-SCIPY ФУНКЦИИ (нужны для diagnose_target)
+# Скопированы 1-в-1 из chapter2_experiments_v6.py
+# ═════════════════════════════════════════════════════════════════════════════
+
 def boxcox_fit(y_train):
     """Подбор λ по MLE + 95% доверительный интервал через LRT."""
     _, lam    = boxcox(y_train)
@@ -162,6 +169,7 @@ def lrt_boxcox(lam_null, lam_opt, y):
     chi2    = float(-2.0 * (ll_null - ll_opt))
     p       = float(stats.chi2.sf(chi2, df=1))
     return chi2, p
+
 
 # ── Lazy-import тяжёлой машинерии Главы 2 (только для audit()) ──────────────
 # run_experiment_cv грузится по требованию — при первом вызове audit().
