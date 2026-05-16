@@ -89,39 +89,118 @@ import numpy as np
 import pandas as pd
 from scipy.stats import skew, kurtosis, shapiro
 
-# ── Импорт машинерии из Главы 2 (v6) ────────────────────────────────────────
-# Сначала пробуем v6 (с GLM-обёрткой и Cohen's d), затем v5 (legacy).
-try:
-    from chapter2_experiments_v6 import (
-        apply_transform, make_model, run_experiment_cv,
-        boxcox_fit, lrt_boxcox, duan_smearing,
-        diebold_mariano, paired_cv_ttest, compute_metrics,
-        cohens_d_squared_errors, min_n_for_power,
-        TRANSFORMS, TR_LABEL, TR_CLASS,
-        MODELS, MODEL_LABEL, MODEL_CLASS, REGRESSION_MODELS,
-        RANDOM_STATE, TEST_SIZE, N_FOLDS, ALPHA, RESULTS_DIR,
-    )
-    _CHAPTER2_VERSION = "v6"
-except ImportError:
+# ── Импорт констант и pure-scipy функций (всегда нужны) ─────────────────────
+# advisor_constants.py — лёгкий модуль без зависимостей от sklearn / xgboost /
+# matplotlib / statsmodels. Грузится в любых окружениях, включая Streamlit
+# Cloud, где могут отсутствовать тяжёлые пакеты для обучения моделей.
+
+RANDOM_STATE    = 42
+TEST_SIZE       = 0.20
+N_FOLDS         = 5
+ALPHA           = 0.05      # уровень значимости
+
+RESULTS_DIR = Path("results")
+# НЕ создаём папку при импорте в облаке (read-only FS на некоторых платформах);
+# создаём только если она нужна для записи — пусть это делает вызывающий код.
+
+TRANSFORMS = ["none", "log", "sqrt", "asinh", "boxcox", "yeojohnson", "quantile"]
+TR_LABEL = {
+    "none":       "Без преобр.",
+    "log":        "ln(y)",
+    "sqrt":       "√y",
+    "asinh":      "asinh(y)",
+    "boxcox":     "Box-Cox",
+    "yeojohnson": "Yeo-Johnson",
+    "quantile":   "Quantile",
+}
+TR_CLASS = {
+    "none":       "—",
+    "log":        "степенное (фикс. λ→0)",
+    "sqrt":       "степенное (фикс. λ=0.5)",
+    "asinh":      "гиперболическое",
+    "boxcox":     "степенное параметрическое (λ по MLE)",
+    "yeojohnson": "степенное параметрическое (λ по MLE, R)",
+    "quantile":   "ранговое непараметрическое",
+}
+
+MODELS = ["linear", "ridge", "lasso", "rf", "xgb", "mlp",
+          "gamma_glm", "tweedie_glm", "xgb_gamma", "xgb_tweedie"]
+MODEL_LABEL = {
+    "linear": "МНК", "ridge": "Ridge", "lasso": "Lasso",
+    "rf": "Random Forest", "xgb": "XGBoost", "mlp": "MLP",
+    "gamma_glm":   "Gamma GLM",    "tweedie_glm": "Tweedie GLM",
+    "xgb_gamma":   "XGB-Gamma",    "xgb_tweedie": "XGB-Tweedie",
+}
+MODEL_CLASS = {
+    "linear":      "линейные",      "ridge":       "линейные",
+    "lasso":       "линейные",
+    "rf":          "древесные",     "xgb":         "древесные",
+    "mlp":         "нейросетевые",
+    "gamma_glm":   "glm",           "tweedie_glm": "glm",
+    "xgb_gamma":   "древесные-glm-loss",
+    "xgb_tweedie": "древесные-glm-loss",
+}
+REGRESSION_MODELS = frozenset({"linear", "ridge", "lasso"})
+
+def boxcox_fit(y_train):
+    """Подбор λ по MLE + 95% доверительный интервал через LRT."""
+    _, lam    = boxcox(y_train)
+    ll_opt    = stats.boxcox_llf(lam, y_train)
+    chi2_crit = stats.chi2.ppf(0.95, df=1)
+    grid      = np.linspace(lam - 3.0, lam + 3.0, 3000)
+    in_ci     = [l for l in grid
+                 if 2.0 * (ll_opt - stats.boxcox_llf(l, y_train)) < chi2_crit]
+    lo = min(in_ci) if in_ci else lam - 0.5
+    hi = max(in_ci) if in_ci else lam + 0.5
+    return float(lam), (float(lo), float(hi))
+
+
+def lrt_boxcox(lam_null, lam_opt, y):
+    """LRT: H₀: λ = lam_null."""
+    ll_opt  = stats.boxcox_llf(lam_opt, y)
+    ll_null = stats.boxcox_llf(lam_null, y)
+    chi2    = float(-2.0 * (ll_null - ll_opt))
+    p       = float(stats.chi2.sf(chi2, df=1))
+    return chi2, p
+
+# ── Lazy-import тяжёлой машинерии Главы 2 (только для audit()) ──────────────
+# run_experiment_cv грузится по требованию — при первом вызове audit().
+# В облачном режиме (без xgboost/sklearn/matplotlib) audit недоступен,
+# но diagnose_target / recommend / recommend_strategy работают нормально.
+_CHAPTER2_VERSION = None   # "v6" | "v5" | None — заполняется в _load_chapter2()
+_run_experiment_cv = None  # будет заполнено при первом вызове audit()
+
+
+def _load_chapter2():
+    """Lazy-import chapter2_experiments_v6/v5. Вызывается только из audit()."""
+    global _run_experiment_cv, _CHAPTER2_VERSION
+    if _run_experiment_cv is not None:
+        return _run_experiment_cv
     try:
-        from chapter2_experiments_v5 import (
-            apply_transform, make_model, run_experiment_cv,
-            boxcox_fit, lrt_boxcox, duan_smearing,
-            diebold_mariano, paired_cv_ttest, compute_metrics,
-            TRANSFORMS, TR_LABEL, TR_CLASS,
-            MODELS, MODEL_LABEL, MODEL_CLASS, REGRESSION_MODELS,
-            RANDOM_STATE, TEST_SIZE, N_FOLDS, ALPHA, RESULTS_DIR,
-        )
-        _CHAPTER2_VERSION = "v5"
-        # Стабы для функций блока 1, если работаем со v5:
-        def cohens_d_squared_errors(*args, **kwargs):
-            return float("nan")
-        def min_n_for_power(*args, **kwargs):
-            return float("inf")
-    except ImportError as e:
-        raise ImportError(
-            "chapter3_advisor_v3.py требует chapter2_experiments_v6.py "
-            f"(или v5 для legacy) в той же директории или PYTHONPATH: {e}")
+        from chapter2_experiments_v6 import run_experiment_cv as _r
+        _CHAPTER2_VERSION = "v6"
+    except ImportError:
+        try:
+            from chapter2_experiments_v5 import run_experiment_cv as _r
+            _CHAPTER2_VERSION = "v5"
+        except ImportError as e:
+            raise ImportError(
+                "Эмпирический audit() требует chapter2_experiments_v6.py "
+                "(или v5) со всеми зависимостями: sklearn, xgboost, "
+                "statsmodels, matplotlib. Для облачного режима (только "
+                "diagnose + recommend) audit не нужен — используйте UI без "
+                f"галочки «Empirical audit». Причина: {e}")
+    _run_experiment_cv = _r
+    return _r
+
+
+def is_audit_available() -> bool:
+    """True, если chapter2 можно загрузить (для UI: показывать чекбокс или нет)."""
+    try:
+        _load_chapter2()
+        return True
+    except ImportError:
+        return False
 
 # Обратные карты «русский label → внутренний ключ»
 LABEL_TO_TR    = {v: k for k, v in TR_LABEL.items()}
@@ -1115,6 +1194,7 @@ def audit(X, y, model_key: str, kb: Optional[KnowledgeBase] = None,
                   f"«{MODEL_CLASS[model_key]}»; преобразования не применяются,")
             print("   оценивается только baseline 'none' для отчётности.)")
 
+    run_experiment_cv = _load_chapter2()  # lazy-import тяжёлой машинерии
     df_cv, _, _ = run_experiment_cv(
         X, y, shift=diag.suggested_shift,
         models=[model_key], skip_transforms=skip,
@@ -1148,6 +1228,193 @@ def audit(X, y, model_key: str, kb: Optional[KnowledgeBase] = None,
         print("\n    ✓ — направление и масштаб улучшения подтверждены эмпирически")
 
     return diag, recs, df_cv, actual
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 5b. EXTRACT_RULES_FOR_USER — процедурный «вид» KB для пользователя
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# Логика advisor-а на вкладках «Диагностика» и «Рекомендации» — это процедурное
+# программирование над KB (full_results_v5.csv): берём γ₁_бин пользователя,
+# фильтруем правила KB, ранжируем. НИКАКОЕ обучение моделей не происходит.
+#
+# extract_rules_for_user() возвращает «срез» KB для конкретного пользователя:
+# какие (модель, преобразование) комбинации эмпирически работали на 27
+# датасетах из Главы 2 для его бина асимметрии. Это и есть «методические
+# рекомендации» в человекочитаемом виде.
+# ═════════════════════════════════════════════════════════════════════════════
+
+def extract_rules_for_user(diag: TargetDiagnostics,
+                           kb: KnowledgeBase,
+                           model_key: Optional[str] = None) -> pd.DataFrame:
+    """Возвращает таблицу правил KB, применимых к данным пользователя.
+
+    Правило = одна строка из KB вида (Model, Transform, gamma_bin →
+    медиана ΔRMSE, P10/P90, доля значимых улучшений, n_evidence).
+
+    Параметры
+    ─────────
+    diag       : результат diagnose_target(y) — определяет γ₁_бин
+    kb         : KnowledgeBase — источник правил
+    model_key  : опционально — отфильтровать только для одной модели
+
+    Возвращает
+    ─────────
+    DataFrame с колонками (model_label, transform_label, transform_class,
+    median_delta_pct, p10_delta_pct, p90_delta_pct, prob_improvement,
+    sig_better_rate, n_evidence), отсортированный по медиане ΔRMSE.
+    """
+    if not hasattr(kb, "_rules") or kb._rules.empty:
+        return pd.DataFrame()
+
+    rules = kb._rules.copy()
+    rules = rules[rules["gamma_bin"] == diag.gamma_bin].copy()
+    if model_key is not None:
+        rules = rules[rules["Model_key"] == model_key]
+
+    if rules.empty:
+        return rules
+
+    rules["model_label"]     = rules["Model_key"].map(
+        lambda k: MODEL_LABEL.get(k, k))
+    rules["transform_label"] = rules["Transform_key"].map(
+        lambda k: TR_LABEL.get(k, k))
+    rules["transform_class"] = rules["Transform_key"].map(
+        lambda k: TR_CLASS.get(k, "—"))
+    rules["model_class"]     = rules["Model_key"].map(
+        lambda k: MODEL_CLASS.get(k, "—"))
+
+    cols = ["model_label", "model_class", "transform_label", "transform_class",
+            "median_delta_pct", "p10_delta_pct", "p90_delta_pct",
+            "prob_improvement", "sig_better_rate", "n_evidence"]
+    cols = [c for c in cols if c in rules.columns]
+    rules = rules[cols].sort_values(
+        ["model_label", "median_delta_pct"], ascending=[True, True]
+    ).reset_index(drop=True)
+    return rules
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 5c. EMPIRICAL_FULL_AUDIT — обучение ВСЕХ моделей на данных пользователя
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# В отличие от recommend()/recommend_strategy() (KB-lookup, без обучения),
+# empirical_full_audit() запускает run_experiment_cv для всех моделей × всех
+# применимых преобразований и возвращает РАНЖИРОВАНИЕ по фактическому RMSE
+# на hold-out. Это «strategy comparison» в её эмпирической форме.
+#
+# Используется на вкладке «Сравнение стратегий» в Streamlit. Требует
+# chapter2_experiments_v6.py со всеми зависимостями (sklearn, xgboost,
+# statsmodels, matplotlib). В облачном режиме — недоступно.
+# ═════════════════════════════════════════════════════════════════════════════
+
+def empirical_full_audit(
+        X, y,
+        models: Optional[List[str]] = None,
+        shift: Optional[float] = None,
+        progress_callback=None,
+        verbose: bool = False,
+        ) -> tuple:
+    """Обучает ВСЕ модели × применимые преобразования, ранжирует по RMSE.
+
+    Параметры
+    ─────────
+    X, y               : пользовательский датасет (X — фичи, y — отклик)
+    models             : список моделей; default = все из MODELS
+    shift              : δ для log/Box-Cox; auto если None
+    progress_callback  : функция (i, total, current_model_label) -> None;
+                         вызывается перед каждой моделью. Для st.progress в UI.
+    verbose            : печать в stdout
+
+    Возвращает
+    ──────────
+    (diag, df_ranked, winner) где
+       diag      : TargetDiagnostics для y
+       df_ranked : DataFrame, индексированный (model_key, transform_key),
+                   отсортированный по RMSE на hold-out (по возрастанию).
+                   Колонки: RMSE, RMSE_train, delta_rmse_pct, DM_p, paired_t_p,
+                            cohens_d, model_label, transform_label, model_class,
+                            rank.
+       winner    : dict с описанием победителя (model + transform + RMSE + ...)
+                   или None, если все модели упали.
+    """
+    diag = diagnose_target(y, shift=shift)
+    if models is None:
+        models = list(MODELS)
+
+    rec_run = _load_chapter2()  # lazy-load run_experiment_cv
+
+    if verbose:
+        print(f"\n  EMPIRICAL AUDIT: обучаю {len(models)} моделей × "
+              f"{len(TRANSFORMS)} преобразований на n={len(y):,}, "
+              f"p={np.asarray(X).shape[1]}")
+
+    # Запускаем по одной модели за раз — это даёт прогресс в UI
+    dfs = []
+    for i, m_key in enumerate(models):
+        m_label = MODEL_LABEL.get(m_key, m_key)
+        if progress_callback is not None:
+            progress_callback(i, len(models), m_label)
+        if verbose:
+            print(f"    [{i+1}/{len(models)}] {m_label}…", end="", flush=True)
+        try:
+            df_i, _, _ = rec_run(
+                X, y, shift=diag.suggested_shift,
+                models=[m_key], skip_transforms=(),
+            )
+            dfs.append(df_i)
+            if verbose:
+                n_rows = len(df_i.dropna(subset=["RMSE"]))
+                print(f" ✓ ({n_rows} результатов)")
+        except Exception as e:
+            if verbose:
+                print(f" ✗ {type(e).__name__}: {str(e)[:60]}")
+
+    if progress_callback is not None:
+        progress_callback(len(models), len(models), None)
+
+    if not dfs:
+        raise RuntimeError(
+            "Empirical audit: все модели завершились с ошибкой. "
+            "Проверьте размер датасета, наличие NaN и числовые типы фичей.")
+
+    df_full = pd.concat(dfs)
+    df_full = df_full.dropna(subset=["RMSE"]).copy()
+
+    # Ранжирование по RMSE на hold-out (меньше = лучше)
+    df_ranked = df_full.sort_values("RMSE", ascending=True).copy()
+    df_ranked["rank"] = range(1, len(df_ranked) + 1)
+    df_ranked["model_label"] = [
+        MODEL_LABEL.get(idx[0], idx[0]) for idx in df_ranked.index]
+    df_ranked["transform_label"] = [
+        TR_LABEL.get(idx[1], idx[1]) for idx in df_ranked.index]
+    df_ranked["model_class"] = [
+        MODEL_CLASS.get(idx[0], "—") for idx in df_ranked.index]
+
+    # Победитель
+    if df_ranked.empty:
+        winner = None
+    else:
+        top = df_ranked.iloc[0]
+        m_key, t_key = df_ranked.index[0]
+        dm_p_val = top.get("DM_p", float("nan"))
+        winner = {
+            "model_key":       m_key,
+            "transform_key":   t_key,
+            "model_label":     MODEL_LABEL.get(m_key, m_key),
+            "transform_label": TR_LABEL.get(t_key, t_key),
+            "model_class":     MODEL_CLASS.get(m_key, "—"),
+            "RMSE":            float(top["RMSE"]),
+            "delta_rmse_pct":  float(top.get("delta_rmse_pct", float("nan"))),
+            "DM_p":            float(dm_p_val) if not np.isnan(dm_p_val) else None,
+            "rank":            1,
+        }
+
+    if verbose and winner is not None:
+        print(f"\n  🏆 Победитель: {winner['model_label']} + "
+              f"{winner['transform_label']}  →  RMSE = {winner['RMSE']:.4g}")
+
+    return diag, df_ranked, winner
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1385,4 +1652,4 @@ def demo(kb_path: Optional[str] = None, run_audit: bool = True):
 
 
 if __name__ == "__main__":
-    demo(),
+    demo()
