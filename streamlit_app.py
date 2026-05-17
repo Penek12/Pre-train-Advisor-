@@ -485,12 +485,13 @@ def section(eyebrow: str, title: str) -> None:
 def stat(label: str, value: str, hint: str = "", tone: str = "") -> None:
     """Большая цифра + малые капс лейбл + курсивный hint."""
     tone_cls = f" {tone}" if tone in ("accent", "sage", "rust") else ""
+    hint_html = f'<div class="stat-hint">{hint}</div>' if hint else ""
     st.markdown(
-        f"""<div class="stat">
-          <div class="stat-num{tone_cls}">{value}</div>
-          <div class="stat-label">{label}</div>
-          {f'<div class="stat-hint">{hint}</div>' if hint else ''}
-        </div>""",
+        f'<div class="stat">'
+        f'<div class="stat-num{tone_cls}">{value}</div>'
+        f'<div class="stat-label">{label}</div>'
+        f'{hint_html}'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
@@ -801,7 +802,6 @@ with tab_diag:
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         stat("n", f"{diag.n:,}")
-        hint = ''
     with c2:
         tone = "accent" if abs(diag.gamma1) > 1.0 else ""
         stat("γ₁ асимметрия", f"{diag.gamma1:+.2f}",
