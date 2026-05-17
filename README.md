@@ -33,7 +33,7 @@
 
 ### 1. Клонирование репозитория
 
-git clone https://github.com/Penek12/Pre-train-Advisor.git
+git clone https://github.com/Penek12/Pre-train-Advisor-.git
 
 cd pre-train-advisor
 
