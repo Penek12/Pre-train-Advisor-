@@ -801,6 +801,7 @@ with tab_diag:
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         stat("n", f"{diag.n:,}")
+        hint = ''
     with c2:
         tone = "accent" if abs(diag.gamma1) > 1.0 else ""
         stat("γ₁ асимметрия", f"{diag.gamma1:+.2f}",
