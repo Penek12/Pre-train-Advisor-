@@ -675,9 +675,20 @@ def recommend(y, model_key: str, kb: Optional[KnowledgeBase] = None,
 
     # Если правила блокируют — возвращаем сразу
     if rule_report.global_block_reason:
-        return diag, [Recommendation(
-            rank=1, transform="none", ...,
-            rationale=rule_report.global_block_reason
+        return diag, [ Recommendation(
+            rank=1,
+            transform="none",
+            transform_label=TR_LABEL["none"],
+            transform_class=TR_CLASS["none"],
+            predicted_delta_pct=0.0,
+            sig_better_rate=0.0,
+            n_evidence=0,
+            applicable=True,
+            rationale=rule_report.global_block_reason,
+            warnings=[
+                "На основе существующей Базы Знаний невозможно дать рекоммендации по преобразованию. ",
+                "Требуется дополнительная диагностика"
+            ]
         )]
 
     # Иначе — обычный KB-lookup, но из top_k исключаем заблокированные
