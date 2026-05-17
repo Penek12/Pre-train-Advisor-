@@ -640,6 +640,9 @@ class Strategy:
         return asdict(self)
 
 
+from transform_applicability_rules import TargetStats, check_applicability
+
+
 def recommend(y, model_key: str, kb: Optional[KnowledgeBase] = None,
               shift: Optional[float] = None, top_k: int = 3,
               verbose: bool = False) -> tuple:
@@ -663,6 +666,23 @@ def recommend(y, model_key: str, kb: Optional[KnowledgeBase] = None,
     с гомоскедастичными остатками, а перенос её на деревья и MLP не
     обоснован. См. шапку chapter2_experiments_v5.py.
     """
+
+    diag = diagnose_target(y)
+    stats = TargetStats.from_diag(diag)
+    model_class = MODEL_CLASS.get(model_key, "")
+
+    rule_report = check_applicability(stats, model_class)
+
+    # Если правила блокируют — возвращаем сразу
+    if rule_report.global_block_reason:
+        return diag, [Recommendation(
+            rank=1, transform="none", ...,
+            rationale=rule_report.global_block_reason
+        )]
+
+    # Иначе — обычный KB-lookup, но из top_k исключаем заблокированные
+    allowed = set(rule_report.allowed_transforms)
+
     if model_key not in MODELS:
         raise ValueError(f"model_key должен быть из {MODELS}, передано: {model_key}")
 
