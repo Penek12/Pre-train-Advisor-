@@ -78,7 +78,7 @@ python chapter2_experiments_v6.py
 
 streamlit run streamlit_app.py
 
-Откройте в браузере: **https://pretrain1advisor.streamlit.app/**
+Откройте в браузере: **(http://localhost:8501)**
 
 ## Использование
 
