@@ -35,8 +35,6 @@
 
 git clone https://github.com/Penek12/Pre-train-Advisor-.git
 
-cd pre-train-advisor
-
 ### 2. Установка Python и создание виртуального окружения
 
 python -m venv venv
@@ -52,6 +50,7 @@ venv\Scripts\activate
 ### 3. Установка зависимостей
 
 pip install --upgrade pip
+cd pre-train-advisor-
 
 Для полного режима с обучением моделей (рекомендуется для локального запуска):
 
